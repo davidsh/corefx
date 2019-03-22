@@ -33,7 +33,7 @@ namespace System.Net.Security
         public bool IsNtlmFallback
         {
             get { return _isNtlmFallback; }
-            set { _isNtlmFallback = value; }
+            set { _isNtlmFallback = value; Console.WriteLine($"IsNtlmFallback: {value}"); }
         }
 
         // Property represents if final protocol negotiated is Ntlm or not.
@@ -50,6 +50,9 @@ namespace System.Net.Security
         public SafeDeleteNegoContext(SafeFreeNegoCredentials credential, string targetName)
             : base(credential)
         {
+            Console.WriteLine($"SafeDeleteNegoContext: (before) targetName={targetName}");
+            //targetName = targetName.Replace('/', '@');
+            Console.WriteLine($"SafeDeleteNegoContext: (after) targetName={targetName}");
             Debug.Assert((null != credential), "Null credential in SafeDeleteNegoContext");
             try
             {

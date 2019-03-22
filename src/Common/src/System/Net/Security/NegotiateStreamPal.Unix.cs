@@ -184,9 +184,10 @@ namespace System.Net.Security
 
             if (context == null)
             {
+                string protocol = isNtlmOnly ? "NTLM" : "SPNEGO";
+                Console.WriteLine($"requested protocol = {protocol}, target = {targetName}");
                 if (NetEventSource.IsEnabled)
                 {
-                    string protocol = isNtlmOnly ? "NTLM" : "SPNEGO";
                     NetEventSource.Info(null, $"requested protocol = {protocol}, target = {targetName}");
                 }
 
@@ -218,9 +219,10 @@ namespace System.Net.Security
 
                 if (initialContext)
                 {
+                    string protocol = isNtlmOnly ? "NTLM" : isNtlmUsed ? "SPNEGO-NTLM" : "SPNEGO-Kerberos";
+                    Console.WriteLine($"actual protocol = {protocol}");
                     if (NetEventSource.IsEnabled)
                     {
-                        string protocol = isNtlmOnly ? "NTLM" : isNtlmUsed ? "SPNEGO-NTLM" : "SPNEGO-Kerberos";
                         NetEventSource.Info(null, $"actual protocol = {protocol}");
                     }
 

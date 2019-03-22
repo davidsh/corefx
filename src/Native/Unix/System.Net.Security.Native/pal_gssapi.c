@@ -167,6 +167,7 @@ uint32_t NetSecurityNative_ImportTargetName(uint32_t* minorStatus,
         nameType = (gss_OID)(unsigned long)GSS_KRB5_NT_PRINCIPAL_NAME;
     }
 
+    printf("NetSecurityNative_ImportTargetName: isNtlmTarget=%d, inputName=%s\n", isNtlmTarget, inputName);
     GssBuffer inputNameBuffer = {.length = inputNameLen, .value = inputName};
     return gss_import_name(minorStatus, &inputNameBuffer, nameType, outputName);
 }
@@ -257,6 +258,8 @@ uint32_t NetSecurityNative_InitSecContext(uint32_t* minorStatus,
     bool retry;
     do
     {
+        printf("Calling gss_init_sec_context: isNtlm=%d, isNtlmFallback=%d\n", isNtlm, isNtlmFallback);
+        if (!isNtlm) reqFlags = GSS_C_DELEG_FLAG | GSS_C_MUTUAL_FLAG | GSS_C_REPLAY_FLAG | GSS_C_INTEG_FLAG;
         majorStatus = gss_init_sec_context(minorStatus,
                                            claimantCredHandle,
                                            contextHandle,
@@ -282,11 +285,23 @@ uint32_t NetSecurityNative_InitSecContext(uint32_t* minorStatus,
     } while (retry);
 
     // Outmech can be null when gssntlmssp lib uses NTLM mechanism
+    printf("After calling gss_init_sec_context: outmech=%p\n", (void*)outmech);
+    if (outmech != NULL)
+        printf("After calling gss_init_sec_context: outmech != NULL\n");
+
+    if (gss_oid_equal(outmech, &gss_mech_ntlm_OID_desc) != 0)
+        printf("After calling gss_init_sec_context: ntlmMech\n");
+
+    if (gss_oid_equal(outmech, krbMech) != 0)
+        printf("After calling gss_init_sec_context: krbMech\n");
+
     if (outmech != NULL && gss_oid_equal(outmech, krbMech) != 0)
     {
         *isNtlmUsed = 0;
     }
 
+    printf("After calling gss_init_sec_context: isNtlmUsed=%d\n", *isNtlmUsed);
+    printf("After calling gss_init_sec_context: reqFlags=%d, retFlags=%d\n", reqFlags, *retFlags);
     NetSecurityNative_MoveBuffer(&gssBuffer, outBuffer);
     return majorStatus;
 }

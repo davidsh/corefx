@@ -589,5 +589,41 @@ namespace System.Net.Http.Functional.Tests
                     _output.WriteLine(authHeaderValue);
                });
         }
+
+        [Fact]
+        public async Task Test_Fix()
+        {
+            if (IsCurlHandler)
+            {
+                return;
+            }
+
+            string server = "http://iis.corefx-net.contoso.com/test/auth/negotiate/showidentity.ashx";
+            //string server = "http://windows.networkapitest.com/test/auth/negotiate/showidentity.ashx";
+            var cred = new NetworkCredential("localuser1", Configuration.Security.WindowsServerUserPassword);
+
+            using (HttpClientHandler handler = CreateHttpClientHandler())
+            using (var client = new HttpClient(handler))
+            {
+                handler.Credentials = cred;
+                //handler.Credentials = CredentialCache.DefaultCredentials;
+
+                var request = new HttpRequestMessage();
+                request.RequestUri = new Uri(server);
+
+                // Force HTTP/1.1 since both CurlHandler and SocketsHttpHandler have problems with
+                // HTTP/2.0 and Windows authentication (due to HTTP/2.0 -> HTTP/1.1 downgrade handling).
+                // Issue #35195 (for SocketsHttpHandler).
+                request.Version = new Version(1,1);
+
+                using (HttpResponseMessage response = await client.SendAsync(request))
+                {
+                    Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+                    string body = await response.Content.ReadAsStringAsync();
+                    _output.WriteLine(body);
+                    Console.WriteLine(body);
+                }
+            }
+        }
     }
 }
