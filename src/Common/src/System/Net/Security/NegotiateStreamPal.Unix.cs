@@ -227,7 +227,7 @@ namespace System.Net.Security
             // TODO (Issue #3718): The second buffer can contain a channel binding which is not supported
             if ((null != inSecurityBufferArray) && (inSecurityBufferArray.Length > 1))
             {
-                throw new PlatformNotSupportedException(SR.net_nego_channel_binding_not_supported);
+                NetEventSource.Info(null, SR.net_nego_channel_binding_not_supported);
             }
 
             SafeFreeNegoCredentials negoCredentialsHandle = (SafeFreeNegoCredentials)credentialsHandle;

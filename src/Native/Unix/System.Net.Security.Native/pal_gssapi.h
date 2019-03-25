@@ -159,3 +159,8 @@ extern "C" uint32_t NetSecurityNative_InitiateCredWithPassword(uint32_t* minorSt
                                                                char* password,
                                                                uint32_t passwdLen,
                                                                GssCredId** outputCredHandle);
+
+/*
+Shims the gss_indicate_mechs method to detect if NTLM mech is installed.
+*/
+extern "C" uint32_t NetSecurityNative_IsNtlmInstalled(void);

@@ -111,7 +111,7 @@ static uint32_t NetSecurityNative_DisplayStatus(uint32_t* minorStatus,
     assert(minorStatus != nullptr);
     assert(outBuffer != nullptr);
 
-    uint32_t messageContext;
+    uint32_t messageContext = 0; // Must initialize to 0 before calling gss_display_status.
     GssBuffer gssBuffer{.length = 0, .value = nullptr};
     uint32_t majorStatus =
         gss_display_status(minorStatus, statusValue, statusType, GSS_C_NO_OID, &messageContext, &gssBuffer);
@@ -155,19 +155,8 @@ extern "C" uint32_t NetSecurityNative_ImportPrincipalName(uint32_t* minorStatus,
     assert(outputName != nullptr);
     assert(*outputName == nullptr);
 
-    gss_OID nameType;
-
-    if (strchr(inputName, '/') != nullptr)
-    {
-        nameType = const_cast<gss_OID>(GSS_KRB5_NT_PRINCIPAL_NAME);
-    }
-    else
-    {
-        nameType = const_cast<gss_OID>(GSS_C_NT_HOSTBASED_SERVICE);
-    }
-
     GssBuffer inputNameBuffer{.length = inputNameLen, .value = inputName};
-    return gss_import_name(minorStatus, &inputNameBuffer, nameType, outputName);
+    return gss_import_name(minorStatus, &inputNameBuffer, GSS_C_NT_HOSTBASED_SERVICE, outputName);
 }
 
 extern "C" uint32_t NetSecurityNative_InitSecContext(uint32_t* minorStatus,
@@ -417,4 +406,37 @@ extern "C" uint32_t NetSecurityNative_InitiateCredWithPassword(uint32_t* minorSt
 {
     return NetSecurityNative_AcquireCredWithPassword(
         minorStatus, isNtlm, desiredName, password, passwdLen, GSS_C_INITIATE, outputCredHandle);
+}
+
+extern "C" uint32_t NetSecurityNative_IsNtlmInstalled()
+{
+#if HAVE_GSS_SPNEGO_MECHANISM
+    gss_OID ntlmOid = GSS_NTLM_MECHANISM;
+#else
+    gss_OID ntlmOid = &gss_mech_ntlm_OID_desc;
+#endif
+
+    uint32_t majorStatus;
+    uint32_t minorStatus;
+    gss_OID_set mechSet;
+    gss_OID_desc oid;
+    uint32_t foundNtlm = 0;
+
+    majorStatus = gss_indicate_mechs(&minorStatus, &mechSet);
+    if (majorStatus == GSS_S_COMPLETE)
+    {
+        for (size_t i = 0; i < mechSet->count; i++)
+        {
+            oid = mechSet->elements[i];
+            if ((oid.length == ntlmOid->length) && (memcmp(oid.elements, ntlmOid->elements, oid.length) == 0))
+            {
+                foundNtlm = 1;
+                break;
+            }
+        }
+
+        gss_release_oid_set(&minorStatus, &mechSet);
+    }
+
+    return foundNtlm;
 }

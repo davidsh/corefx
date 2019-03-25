@@ -8,11 +8,16 @@ using System.Text;
 using System.Threading.Tasks;
 
 using Xunit;
+using Xunit.Abstractions;
 
 namespace System.Net.Http.Functional.Tests
 {
+    using Configuration = System.Net.Test.Common.Configuration;
+
     public abstract class HttpClientHandler_Authentication_Test : HttpClientTestBase
     {
+        private readonly ITestOutputHelper _output;
+
         private const string Username = "testusername";
         private const string Password = "testpassword";
         private const string Domain = "testdomain";
@@ -30,6 +35,11 @@ namespace System.Net.Http.Functional.Tests
                 Assert.Equal(expectedStatusCode, response.StatusCode);
             }
         };
+
+        public HttpClientHandler_Authentication_Test(ITestOutputHelper output)
+        {
+            _output = output;
+        }
 
         [Theory]
         [MemberData(nameof(Authentication_TestData))]
@@ -487,6 +497,139 @@ namespace System.Net.Http.Functional.Tests
                 headers = await server.AcceptConnectionSendResponseAndCloseAsync(content: "hello world");
                 Assert.Contains(headers, header => header.Contains("Authorization: Digest"));
             });
+        }
+
+        public static IEnumerable<object[]> ServerUsesWindowsAuthentication_MemberData()
+        {
+            string server = Configuration.Http.WindowsServerHttpHost;
+            string authEndPoint = "showidentity.ashx";
+
+            yield return new object[] { $"http://{server}/test/auth/ntlm/{authEndPoint}", false };
+            yield return new object[] { $"https://{server}/test/auth/ntlm/{authEndPoint}", false };
+
+            // Curlhandler (due to libcurl bug) cannot do Negotiate (SPNEGO) Kerberos to NTLM fallback.
+            yield return new object[] { $"http://{server}/test/auth/negotiate/{authEndPoint}", true };
+            yield return new object[] { $"https://{server}/test/auth/negotiate/{authEndPoint}", true };
+        }
+
+        private static bool IsNtlmInstalled => Capability.IsNtlmInstalled();
+        private static bool IsWindowsServerAvailable => !string.IsNullOrEmpty(Configuration.Http.WindowsServerHttpHost);
+        private static bool IsDomainJoinedServerAvailable => !string.IsNullOrEmpty(Configuration.Http.DomainJoinedHttpHost);
+
+        [SkipOnTargetFramework(TargetFrameworkMonikers.NetFramework)]
+        [SkipOnTargetFramework(TargetFrameworkMonikers.Uap)]
+        [ConditionalFact(nameof(IsDomainJoinedServerAvailable))]
+        public async Task Credentials_DomainJoinedServerUsesKerberos_Success()
+        {
+            if (IsCurlHandler)
+            {
+                // Skipping test on CurlHandler (libCurl)
+                return;
+            }
+
+            using (HttpClientHandler handler = CreateHttpClientHandler())
+            using (var client = new HttpClient(handler))
+            {
+                handler.Credentials = new NetworkCredential(
+                    Configuration.Security.ActiveDirectoryUserName,
+                    Configuration.Security.ActiveDirectoryUserPassword,
+                    Configuration.Security.ActiveDirectoryName);
+
+                var request = new HttpRequestMessage();
+                var server = $"http://{Configuration.Http.DomainJoinedHttpHost}/test/auth/kerberos/showidentity.ashx";
+                request.RequestUri = new Uri(server);
+
+                // Force HTTP/1.1 since both CurlHandler and SocketsHttpHandler have problems with
+                // HTTP/2.0 and Windows authentication (due to HTTP/2.0 -> HTTP/1.1 downgrade handling).
+                // Issue #35195 (for SocketsHttpHandler).
+                request.Version = new Version(1,1);
+
+                using (HttpResponseMessage response = await client.SendAsync(request))
+                {
+                    Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+                    string body = await response.Content.ReadAsStringAsync();
+                    _output.WriteLine(body);
+                }
+            }
+        }
+
+        [SkipOnTargetFramework(TargetFrameworkMonikers.NetFramework)]
+        [SkipOnTargetFramework(TargetFrameworkMonikers.Uap)]
+        [ConditionalTheory(nameof(IsNtlmInstalled), nameof(IsWindowsServerAvailable))]
+        [MemberData(nameof(ServerUsesWindowsAuthentication_MemberData))]
+        public async Task Credentials_ServerUsesWindowsAuthentication_Success(string server, bool skipOnCurlHandler)
+        {
+            if (IsCurlHandler && skipOnCurlHandler)
+            {
+                // CurlHandler (libCurl) doesn't handle Negotiate with NTLM fallback nor CBT
+                return;
+            }
+
+            using (HttpClientHandler handler = CreateHttpClientHandler())
+            using (var client = new HttpClient(handler))
+            {
+                handler.Credentials = new NetworkCredential(
+                    Configuration.Security.WindowsServerUserName,
+                    Configuration.Security.WindowsServerUserPassword);
+
+                var request = new HttpRequestMessage();
+                request.RequestUri = new Uri(server);
+
+                // Force HTTP/1.1 since both CurlHandler and SocketsHttpHandler have problems with
+                // HTTP/2.0 and Windows authentication (due to HTTP/2.0 -> HTTP/1.1 downgrade handling).
+                // Issue #35195 (for SocketsHttpHandler).
+                request.Version = new Version(1,1);
+
+                using (HttpResponseMessage response = await client.SendAsync(request))
+                {
+                    Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+                    string body = await response.Content.ReadAsStringAsync();
+                    _output.WriteLine(body);
+                }
+            }
+        }
+
+        [SkipOnTargetFramework(TargetFrameworkMonikers.NetFramework)]
+        [SkipOnTargetFramework(TargetFrameworkMonikers.Uap)]
+        [ConditionalTheory(nameof(IsNtlmInstalled))]
+        [InlineData("NTLM")]
+        [InlineData("Negotiate")]
+        public async Task Credentials_ServerChallengesWithWindowsAuth_ClientSendsWindowsAuthHeader(string authScheme)
+        {
+            if (authScheme == "Negotiate" && IsCurlHandler)
+            {
+                // CurlHandler (libCurl) doesn't handle Negotiate with NTLM fallback
+                return;
+            }
+
+            await LoopbackServer.CreateClientAndServerAsync(
+                async uri =>
+                {
+                    using (HttpClientHandler handler = CreateHttpClientHandler())
+                    using (var client = new HttpClient(handler))
+                    {
+                        handler.Credentials = new NetworkCredential("username", "password");
+                        await client.GetAsync(uri);
+                    }
+                },
+                async server =>
+                {
+                    await server.AcceptConnectionAsync(async connection =>
+                    {
+                        List<string> headers =
+                            await connection.ReadRequestHeaderAndSendResponseAsync(
+                                statusCode: HttpStatusCode.Unauthorized,
+                                additionalHeaders: $"Www-authenticate: {authScheme}\r\n");
+                        string authHeaderValue = LoopbackServer.GetRequestHeaderValue(headers, "Authorization");
+                        Assert.Null(authHeaderValue);
+
+                        headers = await connection.ReadRequestHeaderAndSendResponseAsync();
+                        authHeaderValue = LoopbackServer.GetRequestHeaderValue(headers, "Authorization");
+                        Assert.NotNull(authHeaderValue);
+                        _output.WriteLine(authHeaderValue);
+                        Assert.Contains($"{authScheme}", authHeaderValue);
+                    });
+               });
         }
     }
 }
