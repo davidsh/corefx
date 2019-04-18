@@ -1,6 +1,15 @@
-﻿// Licensed to the .NET Foundation under one or more agreements.
+// Licensed to the .NET Foundation under one or more agreements.
 // The .NET Foundation licenses this file to you under the MIT license.
 // See the LICENSE file in the project root for more information.
+
+using System;
+using System.Collections.Generic;
+using System.Data;
+using System.Data.SqlClient;
+using System.IO;
+using System.Linq;
+using System.Text;
+using System.Threading.Tasks;
 
 using System.Data.Common;
 using System.Reflection;
@@ -162,6 +171,38 @@ namespace System.Data.SqlClient.Tests
             var conn = new SqlConnection(string.Empty, sqlCredential);
 
             Assert.Equal(sqlCredential, conn.Credential);
+        }
+
+        [Fact]
+        public void QuickTest()
+        {
+            Console.WriteLine($"(Framework: {Path.GetDirectoryName(typeof(object).Assembly.Location)})");
+            Console.WriteLine($"(System.Data.SqlClient: {Path.GetDirectoryName(typeof(SqlConnection).Assembly.Location)})");
+
+            string connectionString = @"Data Source=iis2.corefx-net.contoso.com\sqlexpress;Initial Catalog=AdventureWorks;Integrated Security=True";
+
+            var connection = new SqlConnection(connectionString);
+            SqlCommand cmd = connection.CreateCommand();
+            cmd.CommandText = "SELECT * FROM Person.Person";
+            cmd.CommandType = CommandType.Text;
+            cmd.Connection = connection;
+
+            var model = new List<Tuple<string, string>>();
+            connection.Open();
+            SqlDataReader reader = cmd.ExecuteReader(CommandBehavior.CloseConnection);
+            while (reader.Read())
+            {
+                string fname = reader["FirstName"].ToString();
+                string lname = reader["LastName"].ToString();
+                model.Add(Tuple.Create(fname, lname));
+            }
+
+            Console.WriteLine($"Number of persons: {model.Count}");
+
+            for (int i = 0; i < 10; i++)
+            {
+                Console.WriteLine($"{i}: {model[i].Item1} {model[i].Item2}");
+            }
         }
     }
 }
